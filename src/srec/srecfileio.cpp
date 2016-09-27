@@ -58,9 +58,25 @@ static inline int p_addressSize(int recordType)
     return  size;
 }
 
+
+inline QByteArray SrecFileIO::p_make_record(int type,int address,const QByteArray& data)
+{
+    int addressSize=p_addressSize(type);
+    QByteArray record(2+255,'\0');
+    record[0]='S';
+    record[1]=static_cast<char>(0x30&type);
+    for(int i=0;i<addressSize;i++)
+    {
+        record[2+i]=static_cast<char>(address>>((addressSize-i-1)*8));
+    }
+    record.replace(2+addressSize,data.size(),data);
+    record[2+255]=static_cast<char>(p_CRC(record,255));
+    return  record;
+}
+
 static inline int hexCharToInt(char MSB,char LSB)
 {
-    return  (hextable[(int)MSB]<<4 )+ hextable[(int)LSB];
+    return  (hextable[static_cast<int>(MSB)]<<4 )+ hextable[static_cast<int>(LSB)];
 }
 
 inline int hexCharToAddress(const QByteArray& data,int offset, int addressBits=16)
@@ -94,9 +110,20 @@ BinaryFileDataPrivate SrecFileIO::read(const QString &fileName)
     return  data;
 }
 
+
+// TODO Test ME!
 bool SrecFileIO::write(const QString &fileName, const BinaryFileDataPrivate &data)
 {
+    QFile outfile(fileName);
+    if(outfile.open(QIODevice::WriteOnly))
+    {
+        p_writeRecord(outfile,0,0,fileName.toLatin1());
+        for(const auto& segment : data.segments())
+        {
 
+            p_writeRecord(outfile,3,static_cast<int>(segment.address()),segment.data());
+        }
+    }
     return true;
 }
 
@@ -126,7 +153,7 @@ Segment SrecFileIO::parseLine(const QByteArray &line)
         address=hexCharToAddress(line,4,addressSize*8);
         dataOffset=4+(addressSize*2);
         std::vector<char> data = p_loadLine(line,(byteCount*2)-(dataOffset-2),dataOffset);
-        return  Segment(std::move(data),address,"");
+        return  Segment(std::move(data),static_cast<quint64>(address),"");
     }
     else
     {
@@ -137,48 +164,27 @@ Segment SrecFileIO::parseLine(const QByteArray &line)
 std::vector<char> SrecFileIO::p_loadLine(const QByteArray &line, int size, int dataOffset)
 {
     std::vector<char> data(static_cast<size_t>(size/2));
-    for(int i=0;i<size;i+=2)
-        data[i/2]=static_cast<char>(hexCharToInt(line[i+dataOffset],line[i+dataOffset+1]));
+    for(int  i=0;i<size;i+=2)
+        data[static_cast<size_t>(i/2)]=static_cast<char>(hexCharToInt(line[i+dataOffset],line[i+dataOffset+1]));
     return  data;
 }
 
-bool SrecFileIO::p_writeHeader(QIODevice &device, const QString &header)
-{
-    return p_writeRecord(device,0,0,header.toLatin1());
-}
 
-
-// TODO complete ME!
+// TODO test ME!
 bool SrecFileIO::p_writeRecord(QIODevice &device, int recordType, int address, const QByteArray &data)
 {
-    int addressSize=p_addressSize(recordType);
-    QByteArray addressBA(addressSize,'0');
-    for(int i;i<addressSize;i++)
-    {
-        addressBA[i]=static_cast<char>(address>>((addressSize-i-1)*8));
-    }
     //Record size is 8 bit = address(2|3|4 bytes) + data + CRC(1 byte)
+    int addressSize=p_addressSize(recordType);
     int chunkSize=255-addressSize-1;
     int fullChunksCount=data.length()/(chunkSize);
     int lastChunkSize=data.length()%(chunkSize);
     for(int i=0;i<fullChunksCount;i++)
     {
-        QByteArray record(2+255,'\0');
-        std::copy(data.constBegin()+(i*chunkSize),data.constBegin()+((i+1)*chunkSize),record.begin()+2+addressSize);
-        record[0]='S';
-        record[1]=static_cast<char>(0x30&recordType);
-
-        record[2+255]=static_cast<char>(p_CRC(record,255));
-        device.write(record);
+        device.write(p_make_record(recordType,address+(i*chunkSize),data.mid(i*chunkSize,chunkSize)));
     }
     if(lastChunkSize)
     {
-        QByteArray record(2+lastChunkSize,'\0');
-        //std::copy(data.constBegin()+((fullChunksCount-1)*chunkSize),data.constBegin()((fullChunksCount-1)*chunkSize)+lastChunkSize,record.begin()+2+addressSize);
-        record[0]='S';
-        record[1]=static_cast<char>(0x30&recordType);
-        record[2+255]=static_cast<char>(p_CRC(record,lastChunkSize));
-        device.write(record);
+        device.write(p_make_record(recordType,address+(fullChunksCount*chunkSize),data.mid(fullChunksCount*chunkSize,lastChunkSize)));
     }
     return true;
 }

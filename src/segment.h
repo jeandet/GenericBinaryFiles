@@ -85,10 +85,10 @@ public:
         }
         return  false;
     }
-    const QString& header(){return  this->p_header;}
-    quint64 size(){return  this->p_data.size();}
-    quint64 address(){return  this->p_address;}
-
+    const QString& header()const {return  this->p_header;}
+    quint64 size()const {return  this->p_data.size();}
+    quint64 address()const{return  this->p_address;}
+    QByteArray data()const{return  QByteArray(this->p_data.data(),this->p_data.size());}
     char &operator[](int i){return p_data[i]; }
     const char &operator[](int i) const{return p_data[i];}
 private:

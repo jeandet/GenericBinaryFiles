@@ -32,7 +32,7 @@ public:
     ~BinaryFileDataPrivate();
     void addSegment(const Segment& segment);
     void addSegment(Segment&& segment);
-    const QVector<Segment>& segments(){return  this->p_segments;}
+    const QVector<Segment>& segments()const {return  this->p_segments;}
 private:
     QVector<Segment> p_segments;
 };
